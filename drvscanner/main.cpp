@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-std::vector<std::string> targetImports = { "MmMapIoSpace", "MmGetPhysicalAddress", "MmMapLockedPagesSpecifyCache", "MmAllocatePagesForMdl", "MmAllocatePagesForMdlEx" };
+std::vector<std::string> targetImports = { "MmCopyVirtualMemory" };
 
 class DriverInfo
 {
@@ -34,40 +34,49 @@ bool DriverInfoSortComparison(const DriverInfo &d1, const DriverInfo &d2)
     return d1.imports.size() > d2.imports.size();
 }
 
+std::string extractPath(const std::string& line) 
+{
+    std::size_t start = line.find('"');
+    std::size_t end = line.find('"', start + 1);
+    if (start != std::string::npos && end != std::string::npos)
+        return line.substr(start + 1, end - start - 1);
+    return "";
+}
+
 int main(int argc, const char** argv)
 {
-    if (argc < 2)
+    // check arguments
+    if (argc != 2) 
     {
-        std::cout << "Incorrect Usage! Please use drvscanner.exe [folder path] [target imports file](optional)" << std::endl;
-        return 0;
+        std::cerr << "Usage: " << argv[0] << " <path to .efu file>" << std::endl;
+        return 1;
     }
 
-    if (!fs::is_directory(argv[1]))
+    std::string efuFilePath = argv[1];
+    //std::string efuFilePath = "C:/Users/15195/Downloads/testexport.efu";
+
+    std::ifstream efuFile(efuFilePath);
+    if (!efuFile.is_open()) 
     {
-        std::cout << "Could not find directory " << argv[1] << "." << std::endl;
-        return 0;
+        std::cerr << "Error: Failed to open .efu file." << std::endl;
+        return 1;
     }
 
-    if(argc == 3)
+    std::vector<std::string> drivers;
+    std::string line;
+    while (std::getline(efuFile, line)) 
     {
-        std::ifstream targetImportsFile;
-        targetImportsFile.open(argv[2], std::ios::in);
-        if(!targetImportsFile.is_open())
+        std::string path = extractPath(line);
+        if (!path.empty()) 
         {
-            std::cout << "Could not open " << argv[2] << std::endl;
-            return 0;
-        }
-
-        targetImports.clear();
-        std::string currentImport = "";
-        while(targetImportsFile.peek() != EOF)
-        {
-            targetImportsFile >> currentImport;
-            targetImports.push_back(currentImport);
+            std::string extension = path.substr(path.find_last_of(".") + 1);
+            if (extension == "sys")
+                drivers.push_back(path);
         }
     }
 
-    std::vector<std::string> drivers = scanner::GetFilesInDirectory(argv[1], ".sys");
+    efuFile.close();
+
     std::cout << "[~] Found " << drivers.size() << " drivers." << std::endl;
 
     std::ofstream logFile;
@@ -94,16 +103,17 @@ int main(int argc, const char** argv)
         fs::path driverPath = fs::path(driverPathStr);
         resultingDrivers.push_back(DriverInfo(driverPathStr, foundImports));
         resultingDriverFileNames.push_back(driverPath.filename().string());
+
     }
 
     std::sort(resultingDrivers.begin(), resultingDrivers.end(), DriverInfoSortComparison);
 
     size_t longestDriverFileNameLength = utils::GetLongestStringLength(resultingDriverFileNames);
-    for (const DriverInfo &driverInfo : resultingDrivers)
+    for (const DriverInfo& driverInfo : resultingDrivers)
     {
         std::string fileName = driverInfo.driverPath.filename().string();
         std::string logText = fileName;
-        
+
         for (size_t i = 0; i < longestDriverFileNameLength - fileName.length() + 5; i++)
         {
             logText += " ";
@@ -111,13 +121,13 @@ int main(int argc, const char** argv)
 
         logText += "[";
 
-        for (const std::string &importName : driverInfo.imports)
+        for (const std::string& importName : driverInfo.imports)
         {
             std::stringstream appendText;
             appendText << importName;
-            if(driverInfo.imports.back() == importName)
+            if (driverInfo.imports.back() == importName)
             {
-                 appendText << "] (" << driverInfo.imports.size() << ")";
+                appendText << "] (" << driverInfo.imports.size() << ")";
             }
             else
             {
@@ -126,7 +136,7 @@ int main(int argc, const char** argv)
 
             logText = logText + appendText.str();
         }
-    
+
         logFile << logText << std::endl;
     }
 
